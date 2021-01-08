@@ -1,0 +1,22 @@
+{
+  "name": "prova-frontend-pagina",
+  "version": "1.0.0",
+  "description": "Página de resposta para a prova de Frontend.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "start-sass": "sass --watch views/styles:public/css",
+    "start-server": "nodemon -e css,js,pug"
+  },
+  "author": "Lucas Leal",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.21.1",
+    "body-parser": "^1.19.0",
+    "express": "^4.17.1",
+    "nodemon": "^2.0.7",
+    "pug": "^3.0.0",
+    "sass": "^1.32.2",
+    "serve-favicon": "^2.5.0"
+  }
+}

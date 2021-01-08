@@ -1,0 +1,287 @@
+html
+  head
+    title Prova - Frontend
+    meta(charset="utf-8")
+    meta(name="viewport" content="width=device-width, initial-scale=1")
+    link(rel='stylesheet' href='/css/index.css')
+    link(rel="stylesheet" href="https://use.typekit.net/arf0ifi.css")
+    link(rel='preconnect' href='https://fonts.gstatic.com')
+    link(href='https://fonts.googleapis.com/css2?family=Cabin&display=swap' rel='stylesheet')
+  body
+    section#app
+      h1 Simulação de empréstimos rápida
+      p Preencha os campos abaixo e o sistema te mostrará qual o valor das suas parcelas.
+      form(action="")
+        p Para começar, digite o valor do empréstimo desejado.
+        div.currency_input
+          label#strong_label(for="valor") R$
+          input#valor(type="text" placeholder="5.000" maxlength="11" autocomplete="off")
+        br
+        div.card_container
+          p Selecione para filtrar por instituições:
+          div#instituicoes_wrapper
+            div.lds-ellipsis
+              div
+              div
+              div
+              div
+        br
+        div.card_container
+          p Selecione para filtrar por convênios:
+          div#convenios_wrapper
+            div.lds-ellipsis
+              div
+              div
+              div
+              div
+        br
+        div.card_container
+          p Em quantas parcelas você gostaria de pagar?
+            div.dropdown(data-amount="36") #[span#parcelas_amount 36 parcelas] #[span.dropdown_svg]
+              div.dropdown_content.fadeInBottom
+                a.selected(onclick="Set_Parcelas(this, '36')") 36 parcelas
+                a(onclick="Set_Parcelas(this, '48')") 48 parcelas
+                a(onclick="Set_Parcelas(this, '60')") 60 parcelas
+                a(onclick="Set_Parcelas(this, '72')") 72 parcelas
+                a(onclick="Set_Parcelas(this, '84')") 84 parcelas
+        p#form_feedback -
+        button Simular!
+    script(src="/js/jQuery.js")
+    script(src="/js/masker.js")
+    script.
+      $(document).ready(() => {
+        //Masking inputs.
+        VMasker(document.querySelector("#valor")).maskMoney({
+          precision: 2,
+          separator: '.',
+          delimiter: ','
+        });
+
+
+        //Animations for the dropdown.
+        var dropdown_timeout;
+        $(".dropdown").on("mouseenter", function() {
+          if (dropdown_timeout) {
+            clearTimeout(dropdown_timeout);
+          }
+          $(this).children(".dropdown_content").show();
+          $(this).children(".dropdown_content").addClass("fade_in_bottom");
+        });
+        $(".dropdown").on("mouseleave", function() {
+          var node = this;
+          dropdown_timeout = setTimeout(function() {
+            $(node).children(".dropdown_content").fadeOut("fast", function() {
+              $(node).children(".dropdown_content").removeClass("fade_in_bottom")
+            });
+          }, 100);
+        });  
+
+        //Getting the "convenios" list.
+        var convenio_request = $.ajax({
+          url: "./convenios",
+          method: "GET"
+        });
+        convenio_request.done(function (msg) {
+          Parse_Responses("convenios", msg);
+        });
+        convenio_request.fail(function (jqXHR, textStatus) {
+          console.error(`Ocorreu um erro ao buscar os convênios: ${textStatus}`);
+            $("#form_feedback").html("Ocorreu um erro ao buscar informações.");
+            $("#form_feedback").css({color: "#ff1515"});
+        });
+
+        //Getting the "instituicoes" list.
+        var instituicoes_request = $.ajax({
+          url: "./instituicoes",
+          method: "GET"
+        });
+        instituicoes_request.done(function (msg) {
+          Parse_Responses("instituicoes", msg);
+        });
+        instituicoes_request.fail(function (jqXHR, textStatus) {
+          console.error(`Ocorreu um erro ao buscar as instituições: ${textStatus}`);
+            $("#form_feedback").html("Ocorreu um erro ao buscar informações.");
+            $("#form_feedback").css({color: "#ff1515"});
+        });
+
+        //Form binding.
+        $('form').on('submit', function(e) {
+          //Pollyfill for older browsers.
+          if (typeof Event.prototype.preventDefault === 'undefined') {
+            Event.prototype.preventDefault = function (e, callback) {
+              this.returnValue = false;
+            };
+          }
+          e.preventDefault ? e.preventDefault() : (window.event.returnValue = false);
+
+          $("#form_feedback").css({color: "transparent"});
+
+          var data = {
+            valor_emprestimo: parseFloat($("#valor")[0].value.replace(/[^0-9.]/g, "")),
+            instituicoes: [],
+            convenios: [],
+            parcelas: parseInt($(".dropdown").attr("data-amount"))
+          };
+
+          //Populating the options.
+          $('*[data-role="convenio"]').each((i,e)=>{
+            if (!$(e)[0].checked) {return;}
+            if($(e).data("key") && $(e).data("key") != "") {
+              data.convenios.push($(e).data("key"));
+            }
+          });
+          $('*[data-role="instituicao"]').each((i,e)=>{
+            if (!$(e)[0].checked) {return;}
+            if($(e).data("key") && $(e).data("key") != "") {
+              data.instituicoes.push($(e).data("key"));
+            }
+          });
+
+          if (!data.valor_emprestimo || data.valor_emprestimo <= 0) {
+            $("#form_feedback").html("Você precisa digitar um valor.")
+            $("#form_feedback").css({color: "#ff1515"});
+            return;
+          }
+
+          $("button").addClass("disabled");
+          $("button").attr("disabled", true);
+          $("input").attr("disabled", true);
+
+          $.post('./simular', { data: JSON.stringify(data)}, function(response) {
+            Handle_Simulation(response);
+            $("button").removeClass("disabled");
+            $("button").removeAttr("disabled");
+            $("input").removeAttr("disabled");
+          }).catch((response) => {
+            $("#form_feedback").html("Ocorreu um erro ao processar seu pedido.");
+            $("#form_feedback").css({color: "#ff1515"});
+            $("button").removeClass("disabled");
+            $("button").removeAttr("disabled");
+            $("input").removeAttr("disabled");
+            $("#simulations").fadeOut('fast');
+          });
+        });
+      });
+
+      //Parses responses from the get requests.
+      function Parse_Responses(type, response) {
+        switch(type) {
+          case "convenios":
+            if (!Validate_JSON(response)) {
+              console.error(`Variável passada precisa ser um JSON: ${response}`);
+              return;
+            }
+            $("#convenios_wrapper").fadeOut('fast', () => {
+              $("#convenios_wrapper").html("");
+              for(var key in response) {
+                $("#convenios_wrapper").append(`
+                  <div class="form__group field switch_container">
+                    <div class="switch_wrapper">
+                      <input class="switch" data-role="convenio" data-key="${response[key].chave}" id="convenio_${response[key].chave}" type="checkbox">
+                      <label for="convenio_${response[key].chave}">${response[key].valor}</label>
+                    </div>
+                  </div>`);
+              }
+              $("#convenios_wrapper").fadeIn("fast");
+            });
+            break;
+          case "instituicoes":
+            if (!Validate_JSON(response)) {
+              console.error(`Variável passada precisa ser um JSON: ${response}`);
+              return;
+            }
+            $("#instituicoes_wrapper").fadeOut('fast', () => {
+              $("#instituicoes_wrapper").html("");
+              for(var key in response) {
+                $("#instituicoes_wrapper").append(`
+                  <div class="form__group field switch_container">
+                    <div class="switch_wrapper">
+                      <input class="switch" data-role="instituicao" data-key="${response[key].chave}" id="instituicao_${response[key].chave}" type="checkbox">
+                      <label for="instituicao_${response[key].chave}">${response[key].valor}</label>
+                    </div>
+                  </div>`);
+              }
+              $("#instituicoes_wrapper").fadeIn("fast");
+            });
+            break;
+          default:
+            console.error(`Tipo de resposta não esperado: ${type}`);
+            break;
+        }
+      }
+
+      //Checks if input is a json or not.
+      function Validate_JSON(input) {
+        try {
+          JSON.stringify(input);
+          return true;
+        } catch (ex) {
+          return false;
+        }
+      }
+
+      //Handles clicks on each element of the dropdown.
+      function Set_Parcelas(element, amount) {
+        $(".selected").removeClass("selected");
+        $(element).addClass("selected");
+        $(".dropdown").attr("data-amount", amount);
+        $("#parcelas_amount").html(`${amount} parcelas`);
+      }
+
+      //Handling responses.
+      function Handle_Simulation(response) {
+        if (!Validate_JSON(response)) {
+          $("#form_feedback").html("Ocorreu um erro ao processar seu pedido.");
+          $("#form_feedback").css({color: "#ff1515"});
+          $("#simulations").fadeOut('fast');
+          return;
+        }
+
+        var data_received = JSON.parse(response);
+
+        let fullHtml = "";
+        let empty_check = true;
+        for(var key in data_received) {
+          if (key == "valor_emprestimo") {continue;}
+          empty_check = false;
+
+          for (var i = 0; i < data_received[key].length; i++) {
+            fullHtml += `
+              <div class="simulation_container">
+                <div class="simulation_price">
+                  <p><span>Solicitado:</span><br>R$${data_received.valor_emprestimo}</p>
+                </div>
+                <div class="simulation_chosen">
+                  <p>${key}<br><span>${data_received[key][i].convenio}</span></p>
+                </div>
+                <div class="horizontal_divider"></div>
+                <div class="simulation_final">
+                  <p><span>${data_received[key][i].parcelas} x</span>R$ ${data_received[key][i].valor_parcela}<br><span>${data_received[key][i].taxa}% ao mês.</span></p>
+                </div>
+              </div>`;
+          }
+        }
+
+        if ($("#simulations").length) {
+          $("#simulations").fadeOut('fast', ()=>{
+            Populate_Simulations(fullHtml, empty_check);
+          });
+        } else {
+          $("#app").append("<section id='simulations' style='display:none'></section>");
+            Populate_Simulations(fullHtml, empty_check);
+        }
+      }
+
+      //Populates the list of simulations.
+      function Populate_Simulations(html, empty_check) {
+
+        if(empty_check) {
+          $("#simulations").html(`<div class="empty_list"><img src="/imgs/illustration.jpg"><p>Não foi possível encontrar nenhum registro. Tente mudar os seus filtros.</p></div>`);
+        } else {
+          $("#simulations").html(html);
+        }
+
+        $("#simulations").fadeIn('fast', ()=> {
+          $("#simulations").get(0).scrollIntoView();
+        });
+      }
